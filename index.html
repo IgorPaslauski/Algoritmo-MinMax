@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Minimax com Poda α-β – Jogo da Velha (Tic-Tac-Toe)</title>
+    <style>
+      :root {
+        --bg: #0f172a;
+        --panel: #111827;
+        --grid: #1f2937;
+        --accent: #22d3ee;
+        --accent2: #38bdf8;
+        --win: #a3e635;
+        --x: #f87171;
+        --o: #60a5fa;
+        --muted: #9ca3af;
+        --text: #e5e7eb;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial;
+        background: linear-gradient(120deg, #0b1022, #0f172a);
+        color: var(--text);
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+      }
+      header {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        padding: 12px 16px;
+        background: rgba(17, 24, 39, 0.85);
+        border-bottom: 1px solid #111827;
+        backdrop-filter: blur(6px);
+      }
+      h1 {
+        font-size: 16px;
+        margin: 0;
+        color: #e2e8f0;
+      }
+      .controls {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .btn {
+        background: linear-gradient(180deg, var(--accent), var(--accent2));
+        color: #081225;
+        border: 0;
+        padding: 8px 12px;
+        border-radius: 10px;
+        font-weight: 700;
+        cursor: pointer;
+        box-shadow: 0 6px 18px rgba(34, 211, 238, 0.25);
+      }
+      .btn.secondary {
+        background: #1f2937;
+        color: var(--text);
+        border: 1px solid #2b3647;
+        box-shadow: none;
+      }
+      .panel {
+        display: grid;
+        grid-template-columns: 320px 1fr;
+        gap: 16px;
+        padding: 16px;
+      }
+      @media (max-width: 980px) {
+        .panel {
+          grid-template-columns: 1fr;
+        }
+      }
+      .sidebar {
+        background: rgba(17, 24, 39, 0.65);
+        border: 1px solid #1f2937;
+        border-radius: 14px;
+        padding: 14px;
+      }
+      .sidebar h2 {
+        margin: 6px 0 10px;
+        font-size: 14px;
+        color: #93c5fd;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 10px;
+      }
+      .row label {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .board-wrap {
+        display: grid;
+        place-items: center;
+        background: rgba(17, 24, 39, 0.55);
+        border: 1px solid #1f2937;
+        border-radius: 14px;
+        position: relative;
+      }
+      canvas {
+        background: #0b0f1f;
+        max-width: 100%;
+        height: auto;
+      }
+      footer {
+        padding: 10px 14px;
+        color: var(--muted);
+        font-size: 12px;
+        text-align: center;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: #0b1222;
+        border: 1px solid #1e293b;
+        padding: 6px 10px;
+        border-radius: 10px;
+        font-size: 12px;
+        color: #cbd5e1;
+      }
+      .legend {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .legend .item {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        font-size: 12px;
+        color: #cbd5e1;
+      }
+      .sw {
+        width: 16px;
+        height: 16px;
+        border-radius: 4px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Minimax • Jogo da Velha (com poda α-β)</h1>
+      <div class="controls">
+        <button class="btn" id="newBtn">⟲ Novo jogo</button>
+        <span class="badge" id="status">Sua vez (X)</span>
+      </div>
+    </header>
+
+    <main class="panel">
+      <aside class="sidebar">
+        <h2>Configurações</h2>
+        <div class="row">
+          <label for="humanIsX">Humano joga com X?</label>
+          <input type="checkbox" id="humanIsX" checked />
+        </div>
+        <div class="row">
+          <label for="useAB">Usar poda α-β</label>
+          <input type="checkbox" id="useAB" checked />
+        </div>
+        <div class="row">
+          <label for="depth">Profundidade máxima</label>
+          <input type="range" id="depth" min="1" max="9" value="9" />
+        </div>
+        <div class="row">
+          <label for="showEval">Mostrar avaliação nas casas</label>
+          <input type="checkbox" id="showEval" />
+        </div>
+
+        <h2>Métricas</h2>
+        <div class="legend">
+          <div class="item"><span class="sw" style="background: var(--x)"></span> X (vermelho)</div>
+          <div class="item"><span class="sw" style="background: var(--o)"></span> O (azul)</div>
+          <div class="item"><span class="sw" style="background: var(--win)"></span> Linha vencedora</div>
+          <div class="item">Nós visitados: <strong id="nodes">0</strong></div>
+          <div class="item">Tempo IA: <strong id="ms">0 ms</strong></div>
+        </div>
+      </aside>
+
+      <section class="board-wrap">
+        <canvas id="board" width="540" height="540" aria-label="Jogo da Velha"></canvas>
+      </section>
+    </main>
+
+    <footer>Clique em uma casa vazia para jogar. Ajuste profundidade para simular dificuldade; marque “Mostrar avaliação” para ver a pontuação de cada jogada.</footer>
+
+    <script>
+      const canvas = document.getElementById("board");
+      const ctx = canvas.getContext("2d");
+
+      const humanIsX = document.getElementById("humanIsX");
+      const useAB = document.getElementById("useAB");
+      const depthInput = document.getElementById("depth");
+      const showEval = document.getElementById("showEval");
+      const statusEl = document.getElementById("status");
+      const nodesEl = document.getElementById("nodes");
+      const msEl = document.getElementById("ms");
+      const newBtn = document.getElementById("newBtn");
+
+      const S = 3; // 3x3
+      const CELL = canvas.width / S;
+
+      let state = {
+        board: Array(9).fill(null),
+        turn: "X",
+        over: false,
+        winner: null,
+        line: null,
+        nodes: 0,
+        maxDepth: 9,
+      };
+
+      function idx(r, c) {
+        return r * S + c;
+      }
+      function rc(i) {
+        return [Math.floor(i / S), i % S];
+      }
+
+      function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // fundo
+        ctx.fillStyle = "#0b0f1f";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        // grid
+        ctx.strokeStyle = "#1f2937";
+        ctx.lineWidth = 6;
+        for (let i = 1; i < S; i++) {
+          ctx.beginPath();
+          ctx.moveTo(i * CELL, 20);
+          ctx.lineTo(i * CELL, canvas.height - 20);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(20, i * CELL);
+          ctx.lineTo(canvas.width - 20, i * CELL);
+          ctx.stroke();
+        }
+
+        // jogadas
+        for (let i = 0; i < 9; i++) {
+          const v = state.board[i];
+          const [r, c] = rc(i);
+          const x = c * CELL,
+            y = r * CELL;
+          if (v === "X") drawX(x, y);
+          if (v === "O") drawO(x, y);
+        }
+
+        // linha vencedora
+        if (state.line) {
+          const [[r1, c1], [r2, c2]] = state.line;
+          ctx.strokeStyle = getCSS("--win");
+          ctx.lineWidth = 10;
+          ctx.beginPath();
+          ctx.moveTo(c1 * CELL + CELL / 2, r1 * CELL + CELL / 2);
+          ctx.lineTo(c2 * CELL + CELL / 2, r2 * CELL + CELL / 2);
+          ctx.stroke();
+        }
+
+        // avaliações nas casas
+        if (showEval.checked && !state.over && aiTurn()) {
+          const moves = empties(state.board);
+          for (const m of moves) {
+            const [r, c] = rc(m);
+            const x = c * CELL + CELL / 2;
+            const y = r * CELL + CELL / 2;
+            const maxD = parseInt(depthInput.value);
+            const start = performance.now();
+            state.nodes = 0;
+            const score = bestScoreForMove(state.board, m, getAI(), maxD, useAB.checked);
+            const dt = Math.max(1, Math.round(performance.now() - start));
+            nodesEl.textContent = state.nodes.toString();
+            msEl.textContent = dt + " ms";
+            drawEvalText(x, y, (score > 0 ? "+" : "") + score.toFixed(1));
+          }
+        }
+
+        statusEl.textContent = state.over ? (state.winner ? `Fim: ${state.winner} venceu` : "Fim: Empate") : state.turn === "X" ? "Sua vez (X)" : "Sua vez (O)";
+      }
+
+      function getCSS(v) {
+        return getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+      }
+
+      function drawX(x, y) {
+        ctx.strokeStyle = getCSS("--x");
+        ctx.lineWidth = 10;
+        ctx.lineCap = "round";
+        const pad = CELL * 0.22;
+        ctx.beginPath();
+        ctx.moveTo(x + pad, y + pad);
+        ctx.lineTo(x + CELL - pad, y + CELL - pad);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x + CELL - pad, y + pad);
+        ctx.lineTo(x + pad, y + CELL - pad);
+        ctx.stroke();
+      }
+      function drawO(x, y) {
+        ctx.strokeStyle = getCSS("--o");
+        ctx.lineWidth = 10;
+        const pad = CELL * 0.22;
+        const cx = x + CELL / 2,
+          cy = y + CELL / 2,
+          r = CELL / 2 - pad;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // lógica de jogo
+      const wins = [
+        [0, 1, 2],
+        [3, 4, 5],
+        [6, 7, 8], // rows
+        [0, 3, 6],
+        [1, 4, 7],
+        [2, 5, 8], // cols
+        [0, 4, 8],
+        [2, 4, 6], // diagonals
+      ];
+
+      function checkWinner(board) {
+        for (const w of wins) {
+          const [a, b, c] = w;
+          if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+            const [r1, c1] = rc(a),
+              [r2, c2] = rc(c);
+            return {
+              winner: board[a],
+              line: [
+                [r1, c1],
+                [r2, c2],
+              ],
+            };
+          }
+        }
+        if (board.every(v => v)) return { winner: null, line: null, draw: true };
+        return null;
+      }
+
+      function empties(board) {
+        const res = [];
+        for (let i = 0; i < 9; i++) {
+          if (!board[i]) res.push(i);
+        }
+        return res;
+      }
+
+      function aiTurn() {
+        const human = humanIsX.checked ? "X" : "O";
+        const ai = human === "X" ? "O" : "X";
+        return state.turn === ai;
+      }
+      function getAI() {
+        return humanIsX.checked ? "O" : "X";
+      }
+
+      // avaliação: +10 vitória AI, -10 derrota AI, 0 empate; preferir vitórias rápidas/derrotas tardias
+      function evaluate(board, depth, ai) {
+        const res = checkWinner(board);
+        if (!res) return null; // jogo segue
+        if (res.draw) return 0;
+        if (res.winner === ai) return 10 - depth;
+        return -10 + depth;
+      }
+
+      function minimax(board, depth, isMax, ai, maxDepth, alpha = -Infinity, beta = Infinity) {
+        state.nodes++;
+        const score = evaluate(board, depth, ai);
+        if (score !== null) return score;
+        if (depth >= maxDepth) return 0; // corte por profundidade
+
+        const human = ai === "X" ? "O" : "X";
+        const player = isMax ? ai : human;
+        const moves = empties(board);
+
+        if (isMax) {
+          let best = -Infinity;
+          for (const m of moves) {
+            board[m] = player;
+            const val = minimax(board, depth + 1, false, ai, maxDepth, alpha, beta);
+            board[m] = null;
+            best = Math.max(best, val);
+            if (useAB.checked) {
+              alpha = Math.max(alpha, val);
+              if (beta <= alpha) break; // poda
+            }
+          }
+          return best;
+        } else {
+          let best = Infinity;
+          for (const m of moves) {
+            board[m] = player;
+            const val = minimax(board, depth + 1, true, ai, maxDepth, alpha, beta);
+            board[m] = null;
+            best = Math.min(best, val);
+            if (useAB.checked) {
+              beta = Math.min(beta, val);
+              if (beta <= alpha) break; // poda
+            }
+          }
+          return best;
+        }
+      }
+
+      function bestMove(board, ai, maxDepth) {
+        let bestVal = -Infinity,
+          move = null;
+        const moves = empties(board);
+        for (const m of moves) {
+          board[m] = ai;
+          const val = minimax(board, 0, false, ai, maxDepth, -Infinity, Infinity);
+          board[m] = null;
+          if (val > bestVal) {
+            bestVal = val;
+            move = m;
+          }
+        }
+        return move;
+      }
+
+      function bestScoreForMove(board, move, ai, maxDepth) {
+        board[move] = ai;
+        const score = minimax(board, 0, false, ai, maxDepth, -Infinity, Infinity);
+        board[move] = null;
+        return score;
+      }
+
+      function aiPlay() {
+        if (state.over) return;
+        const ai = getAI();
+        const maxD = parseInt(depthInput.value);
+        const t0 = performance.now();
+        state.nodes = 0;
+        const move = bestMove(state.board, ai, maxD);
+        const t1 = performance.now();
+        nodesEl.textContent = state.nodes.toString();
+        msEl.textContent = Math.max(1, Math.round(t1 - t0)) + " ms";
+        if (move !== null) {
+          state.board[move] = ai;
+          state.turn = ai === "X" ? "O" : "X";
+          finalizeIfNeeded();
+        }
+        draw();
+      }
+
+      function finalizeIfNeeded() {
+        const res = checkWinner(state.board);
+        if (res) {
+          state.over = true;
+          state.winner = res.winner || null;
+          state.line = res.line || null;
+        }
+      }
+
+      canvas.addEventListener("click", e => {
+        if (state.over) return;
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left,
+          y = e.clientY - rect.top;
+        const c = Math.floor(x / CELL),
+          r = Math.floor(y / CELL);
+        const i = idx(r, c);
+        if (state.board[i]) return; // ocupado
+
+        const human = humanIsX.checked ? "X" : "O";
+        if (state.turn !== human) return; // não é sua vez
+
+        state.board[i] = human;
+        state.turn = human === "X" ? "O" : "X";
+        finalizeIfNeeded();
+        draw();
+        if (!state.over) setTimeout(aiPlay, 50);
+      });
+
+      newBtn.addEventListener("click", resetGame);
+      humanIsX.addEventListener("change", () => {
+        resetGame();
+      });
+      depthInput.addEventListener("input", () => draw());
+      showEval.addEventListener("change", () => draw());
+
+      function resetGame() {
+        state.board = Array(9).fill(null);
+        state.turn = "X";
+        state.over = false;
+        state.winner = null;
+        state.line = null;
+        state.nodes = 0;
+        msEl.textContent = "0 ms";
+        nodesEl.textContent = "0";
+        // se humano escolheu O, a IA (X) joga primeiro
+        if (!humanIsX.checked) {
+          draw();
+          setTimeout(aiPlay, 80);
+        } else {
+          draw();
+        }
+      }
+
+      function getCSS(v) {
+        return getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+      }
+      function drawEvalText(x, y, text) {
+        ctx.font = "bold 22px ui-monospace, Menlo, Consolas, monospace";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = "#e5e7eb";
+        ctx.shadowColor = "rgba(0,0,0,.6)";
+        ctx.shadowBlur = 2;
+        ctx.fillText(text, x, y);
+        ctx.shadowBlur = 0;
+      }
+
+      // start
+      resetGame();
+    </script>
+  </body>
+</html>
