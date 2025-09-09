@@ -16,6 +16,9 @@
         --o: #60a5fa;
         --muted: #9ca3af;
         --text: #e5e7eb;
+
+        --eval-badge-bg: rgba(2, 6, 23, 0.65);
+        --eval-stroke: rgba(255, 255, 255, 0.08);
       }
       html,
       body {
@@ -227,12 +230,17 @@
       function rc(i) {
         return [Math.floor(i / S), i % S];
       }
+      function getCSS(v) {
+        return getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+      }
 
       function draw() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+
         // fundo
         ctx.fillStyle = "#0b0f1f";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
+
         // grid
         ctx.strokeStyle = "#1f2937";
         ctx.lineWidth = 6;
@@ -257,6 +265,43 @@
           if (v === "O") drawO(x, y);
         }
 
+        // ⟵ MUDANÇA: avaliações SEMPRE que "Mostrar avaliação" estiver marcado
+        // agora calcula do ponto de vista do JOGADOR DA VEZ (state.turn)
+        if (showEval.checked && !state.over) {
+          const moves = empties(state.board);
+          const maxD = parseInt(depthInput.value);
+          const perspective = state.turn; // X ou O, quem vai jogar agora
+
+          const t0 = performance.now();
+          state.nodes = 0;
+
+          const evals = moves.map(m => ({
+            move: m,
+            score: bestScoreForMovePerspective(state.board, m, perspective, maxD, useAB.checked),
+          }));
+
+          const t1 = performance.now();
+          nodesEl.textContent = state.nodes.toString();
+          msEl.textContent = Math.max(1, Math.round(t1 - t0)) + " ms";
+
+          const bestVal = Math.max(...evals.map(e => e.score));
+          const bestMoves = new Set(evals.filter(e => e.score === bestVal).map(e => e.move));
+
+          for (const { move, score } of evals) {
+            const [r, c] = rc(move);
+            const cellX = c * CELL;
+            const cellY = r * CELL;
+
+            // heatmap leve na célula
+            drawHeat(cellX, cellY, CELL, CELL, score);
+
+            // badge FIXO NO TOPO da casa
+            const tx = cellX + CELL / 2;
+            const ty = cellY + 18;
+            drawEvalBadge(tx, ty, (score > 0 ? "+" : "") + score.toFixed(1), score, bestMoves.has(move));
+          }
+        }
+
         // linha vencedora
         if (state.line) {
           const [[r1, c1], [r2, c2]] = state.line;
@@ -268,31 +313,16 @@
           ctx.stroke();
         }
 
-        // avaliações nas casas
-        if (showEval.checked && !state.over && aiTurn()) {
-          const moves = empties(state.board);
-          for (const m of moves) {
-            const [r, c] = rc(m);
-            const x = c * CELL + CELL / 2;
-            const y = r * CELL + CELL / 2;
-            const maxD = parseInt(depthInput.value);
-            const start = performance.now();
-            state.nodes = 0;
-            const score = bestScoreForMove(state.board, m, getAI(), maxD, useAB.checked);
-            const dt = Math.max(1, Math.round(performance.now() - start));
-            nodesEl.textContent = state.nodes.toString();
-            msEl.textContent = dt + " ms";
-            drawEvalText(x, y, (score > 0 ? "+" : "") + score.toFixed(1));
-          }
-        }
-
         statusEl.textContent = state.over ? (state.winner ? `Fim: ${state.winner} venceu` : "Fim: Empate") : state.turn === "X" ? "Sua vez (X)" : "Sua vez (O)";
       }
 
-      function getCSS(v) {
-        return getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+      function bestScoreForMovePerspective(board, move, playerToMove, maxDepth) {
+        board[move] = playerToMove; // jogador da vez faz o lance
+        // depois do lance, o oponente joga: logo começamos com isMax = false
+        const score = minimax(board, 0, false, playerToMove, maxDepth, -Infinity, Infinity);
+        board[move] = null;
+        return score;
       }
-
       function drawX(x, y) {
         ctx.strokeStyle = getCSS("--x");
         ctx.lineWidth = 10;
@@ -317,6 +347,88 @@
         ctx.beginPath();
         ctx.arc(cx, cy, r, 0, Math.PI * 2);
         ctx.stroke();
+      }
+
+      // helpers visuais
+      function clamp(v, a, b) {
+        return Math.max(a, Math.min(b, v));
+      }
+      function norm(score) {
+        return clamp((score + 10) / 20, 0, 1);
+      } // [-10,10] -> [0,1]
+      function lerpColor(t) {
+        const r1 = 239,
+          g1 = 68,
+          b1 = 68,
+          r2 = 96,
+          g2 = 165,
+          b2 = 250;
+        const r = Math.round(r1 + (r2 - r1) * t);
+        const g = Math.round(g1 + (g2 - g1) * t);
+        const b = Math.round(b1 + (b2 - b1) * t);
+        return `rgb(${r},${g},${b})`;
+      }
+      function drawRoundRect(x, y, w, h, r) {
+        const rr = Math.min(r, w / 2, h / 2);
+        ctx.beginPath();
+        ctx.moveTo(x + rr, y);
+        ctx.arcTo(x + w, y, x + w, y + h, rr);
+        ctx.arcTo(x + w, y + h, x, y + h, rr);
+        ctx.arcTo(x, y + h, x, y, rr);
+        ctx.arcTo(x, y, x + w, y, rr);
+        ctx.closePath();
+      }
+      function drawEvalBadge(cx, cy, text, score, highlight) {
+        const t = norm(score);
+        const col = lerpColor(t);
+
+        const padX = 10,
+          padY = 6;
+        ctx.font = "bold 18px ui-monospace, Menlo, Consolas, monospace";
+        const tw = ctx.measureText(text).width;
+        const bw = tw + padX * 2;
+        const bh = 26;
+
+        const x = cx - bw / 2;
+        const y = cy - bh / 2;
+
+        ctx.save();
+        drawRoundRect(x, y, bw, bh, 8);
+        ctx.fillStyle = "rgba(2, 6, 23, 0.7)";
+        ctx.fill();
+
+        ctx.lineWidth = highlight ? 2.5 : 1.25;
+        ctx.strokeStyle = col;
+        ctx.stroke();
+
+        ctx.fillStyle = col;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.shadowColor = "rgba(0,0,0,.5)";
+        ctx.shadowBlur = 2;
+        ctx.fillText(text, cx, cy + 1);
+        ctx.restore();
+
+        if (highlight) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(cx, y + bh + 4);
+          ctx.lineTo(cx - 6, y + bh - 6);
+          ctx.lineTo(cx + 6, y + bh - 6);
+          ctx.closePath();
+          ctx.fillStyle = col;
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+      function drawHeat(x, y, w, h, score) {
+        const t = norm(score);
+        const col = lerpColor(t);
+        ctx.save();
+        ctx.globalAlpha = 0.12 + 0.18 * Math.abs(t - 0.5) * 2;
+        ctx.fillStyle = col;
+        ctx.fillRect(x + 6, y + 6, w - 12, h - 12);
+        ctx.restore();
       }
 
       // lógica de jogo
@@ -352,9 +464,7 @@
 
       function empties(board) {
         const res = [];
-        for (let i = 0; i < 9; i++) {
-          if (!board[i]) res.push(i);
-        }
+        for (let i = 0; i < 9; i++) if (!board[i]) res.push(i);
         return res;
       }
 
@@ -508,20 +618,6 @@
         } else {
           draw();
         }
-      }
-
-      function getCSS(v) {
-        return getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-      }
-      function drawEvalText(x, y, text) {
-        ctx.font = "bold 22px ui-monospace, Menlo, Consolas, monospace";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillStyle = "#e5e7eb";
-        ctx.shadowColor = "rgba(0,0,0,.6)";
-        ctx.shadowBlur = 2;
-        ctx.fillText(text, x, y);
-        ctx.shadowBlur = 0;
       }
 
       // start
